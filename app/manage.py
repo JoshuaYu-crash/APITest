@@ -1,15 +1,11 @@
 from flask import Flask, jsonify, request, make_response, abort
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
-import json
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = "mysql://root:123456@127.0.0.1/RESTful_API"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
-
-
-
 
 
 class Task(db.Model):
@@ -21,7 +17,6 @@ class Task(db.Model):
     addtime = db.Column(db.DateTime, index=True, default=datetime.now)
     finishtime = db.Column(db.DateTime)
 
-    @property
     def __repr__(self):
         return '<Task %r>' % self.name
 
@@ -47,25 +42,47 @@ tasks = [
 def JsonError(error):
     return make_response(jsonify(
         {
-            "status": 1,
-            "message": u"请求不是json格式",
+            "status": 1001,
+            "message": u"Wrong Json Type",
             "data": None
         }
     ), 400)
 
 
-@app.errorhandler(401)
-def JsonError(error):
+@app.errorhandler(406)
+def InformationError(error):
     return make_response(jsonify(
         {
-            "status": 2,
-            "message": u"信息不完全",
+            "status": 1002,
+            "message": u"Incomplete Information",
             "data": None
         }
-    ), 401)
+    ), 406)
 
 
-#添加⼀条新的待办事项
+@app.errorhandler(500)
+def DatabaseError(error):
+    return make_response(jsonify(
+        {
+            "status": 1003,
+            "message": u"Database Processing Failed",
+            "data": None
+        }
+    ), 500)
+
+
+@app.errorhandler(403)
+def UserError(error):
+    return make_response(jsonify(
+        {
+            "status": 1004,
+            "message": u"User Does Not Exist",
+            "data": None
+        }
+    ), 403)
+
+
+# 添加⼀条新的待办事项
 @app.route("/todo/api/v1.0/posttask", methods=["POST"])
 def PostTasks():
     try:
@@ -75,30 +92,36 @@ def PostTasks():
     print(temp)
     if temp['user'] == '' or temp['todo'] == '':
         abort(401)
-
     task = Task(
         user=temp["user"],
         todo=temp['todo'],
         finishtime=temp['finishtime']
     )
-    db.session.add(task)
-    db.session.commit()
+    try:
+        db.session.add(task)
+        db.session.commit()
+    except:
+        abort(402)
     return jsonify({'task': temp}), 201
 
 
-
-
-#查看所有事项
+# 查看所有事项
 @app.route("/todo/api/v1.0/<name>/getalltasks")
 def GetAllTasks(name):
+    if Task.query.filter_by(
+        user=name
+    ).count() == 0:
+        abort(403)
     datas = Task.query.filter_by(
         user=name
     ).all()
     templist = []
     for data in datas:
         temp = {
+            "id": data.id,
             "user": data.user,
             "todo": data.todo,
+            "done": data.done,
             "addtime": data.addtime,
             "finishtime": data.finishtime
         }
@@ -110,9 +133,13 @@ def GetAllTasks(name):
     })
 
 
-#查看所有待办事项
+# 查看所有待办事项
 @app.route("/todo/api/v1.0/<name>/gettodotasks")
 def GetTodoTasks(name):
+    if Task.query.filter_by(
+        user=name
+    ).count() == 0:
+        abort(403)
     datas = Task.query.filter(
         Task.user == name,
         Task.done == 0
@@ -120,6 +147,7 @@ def GetTodoTasks(name):
     templist = []
     for data in datas:
         temp = {
+            "id": data.id,
             "user": data.user,
             "todo": data.todo,
             "done": data.done,
@@ -134,9 +162,13 @@ def GetTodoTasks(name):
     })
 
 
-#查看所有已完成事项
+# 查看所有已完成事项
 @app.route("/todo/api/v1.0/<name>/getdonetasks")
 def GetDoneTasks(name):
+    if Task.query.filter_by(
+        user=name
+    ).count() == 0:
+        abort(403)
     datas = Task.query.filter(
         Task.user == name,
         Task.done == 1
@@ -144,6 +176,7 @@ def GetDoneTasks(name):
     templist = []
     for data in datas:
         temp = {
+            "id": data.id,
             "user": data.user,
             "todo": data.todo,
             "done": data.done,
@@ -158,127 +191,170 @@ def GetDoneTasks(name):
     })
 
 
-#删除一条事项
+# 删除一条事项
 @app.route("/todo/api/v1.0/<name>/deletetask:<int:id>")
 def DeleteTask(name, id):
+    if Task.query.filter_by(
+        user=name
+    ).count() == 0:
+        abort(403)
     data = Task.query.filter(
         Task.user == name,
         Task.id == id
-    ). first()
-    db.session.delete(data)
-    db.session.commit()
+    ).first()
+    try:
+        db.session.delete(data)
+        db.session.commit()
+    except:
+        abort(402)
     return jsonify({
         "status": 0,
         "message": "",
     })
 
 
-#删除所有事项
+# 删除所有事项
 @app.route("/todo/api/v1.0/<name>/deletealltasks")
 def DeleteAllTasks(name):
+    if Task.query.filter_by(
+        user=name
+    ).count() == 0:
+        abort(403)
     datas = Task.query.filter(
         Task.user == name,
     ).all()
-    for data in datas:
-        db.session.delete(data)
-    db.session.commit()
+    try:
+        for data in datas:
+            db.session.delete(data)
+        db.session.commit()
+    except:
+        abort(402)
     return jsonify({
         "status": 0,
         "message": "",
     })
 
 
-#删除已完成事项
+# 删除已完成事项
 @app.route("/todo/api/v1.0/<name>/deletedonetasks")
 def DeleteDoneTasks(name):
+    if Task.query.filter_by(
+        user=name
+    ).count() == 0:
+        abort(403)
     datas = Task.query.filter(
         Task.user == name,
         Task.done == 1
     ).all()
-    for data in datas:
-        db.session.delete(data)
-    db.session.commit()
+    try:
+        for data in datas:
+            db.session.delete(data)
+        db.session.commit()
+    except:
+        abort(402)
     return jsonify({
         "status": 0,
         "message": "",
     })
 
 
-#删除待完成事项
+# 删除待完成事项
 @app.route("/todo/api/v1.0/<name>/deletetodotasks")
 def DeleteTodoTasks(name):
+    if Task.query.filter_by(
+        user=name
+    ).count() == 0:
+        abort(403)
     datas = Task.query.filter(
         Task.user == name,
         Task.done == 0
     ).all()
-    for data in datas:
-        db.session.delete(data)
-    db.session.commit()
+    try:
+        for data in datas:
+            db.session.delete(data)
+        db.session.commit()
+    except:
+        abort(402)
     return jsonify({
         "status": 0,
         "message": "",
     })
 
 
-#设置一条待办事项待办
+# 设置一条待办事项待办
 @app.route("/todo/api/v1.0/<name>/settasktodo:<int:id>")
 def SetTaskTodo(name, id):
+    if Task.query.filter_by(
+        user=name
+    ).count() == 0:
+        abort(403)
     data = Task.query.filter(
         Task.user == name,
         Task.id == id
-    ). first()
+    ).first()
     data.done = 0
-    db.session.commit()
+    try:
+        db.session.commit()
+    except:
+        abort(402)
     return jsonify({
         "status": 0,
         "message": "",
     })
 
 
-#设置所有待办事项待办
+# 设置所有事项待办事项
 @app.route("/todo/api/v1.0/<name>/setalltaskstodo")
 def SetAllTasksTodo(name):
+    if Task.query.filter_by(
+        user=name
+    ).count() == 0:
+        abort(403)
     datas = Task.query.filter(
         Task.user == name,
         Task.done == 1
     ).all()
-    templist = []
     for data in datas:
         data.done = 0
-        temp = {
-            "user": data.user,
-            "todo": data.todo,
-            "done": data.done,
-            "addtime": data.addtime,
-            "finishtime": data.finishtime
-        }
-        templist.append(temp)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except:
+        abort(402)
     return jsonify({
         "status": 0,
-        "message": "",
-        "data": templist,
+        "message": ""
     })
 
 
-#设置一条已完成事项为已完成
+# 设置一条待办事项为已完成事项
 @app.route("/todo/api/v1.0/<name>/settaskdone:<int:id>")
 def SetTaskdone(name, id):
+    if Task.query.filter_by(
+        user=name
+    ).count() == 0:
+        abort(403)
     data = Task.query.filter(
         Task.user == name,
         Task.id == id
     ).first()
     data.done = 1
-    db.session.commit()
+    try:
+        db.session.commit()
+    except:
+        abort(402)
     return jsonify({
         "status": 0,
         "message": "",
     })
 
 
-#设置所有已完成事项为已完成
+# 设置所有事项为已完成事项
 @app.route("/todo/api/v1.0/<name>/setalltasksdone")
 def SetAllTasksDone(name):
+    if Task.query.filter_by(
+        user=name
+    ).count() == 0:
+        abort(403)
     datas = Task.query.filter(
         Task.user == name,
         Task.done == 0
@@ -286,25 +362,23 @@ def SetAllTasksDone(name):
     templist = []
     for data in datas:
         data.done = 1
-        temp = {
-            "user": data.user,
-            "todo": data.todo,
-            "done": data.done,
-            "addtime": data.addtime,
-            "finishtime": data.finishtime
-        }
-        templist.append(temp)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except:
+        abort(402)
     return jsonify({
         "status": 0,
         "message": "",
-        "data": templist,
     })
 
 
-#获取所有事项的数量
-app.route("/todo/api/v1.0/<name>/getalltasksnum")
+# 获取所有事项的数量
+@app.route("/todo/api/v1.0/<name>/getalltasksnum")
 def GetAllTasksNum(name):
+    if Task.query.filter_by(
+        user=name
+    ).count() == 0:
+        abort(403)
     datanum = Task.query.filter(
         Task.user == name,
     ).count()
@@ -315,9 +389,13 @@ def GetAllTasksNum(name):
     })
 
 
-#获取所有待办事项的数量
-@app.route("/todo/api/v1.0/<name>/gettotasksnum")
+# 获取所有待办事项的数量
+@app.route("/todo/api/v1.0/<name>/gettodotasksnum")
 def GetTodoTasksNum(name):
+    if Task.query.filter_by(
+        user=name
+    ).count() == 0:
+        abort(403)
     datanum = Task.query.filter(
         Task.user == name,
         Task.done == 0
@@ -332,6 +410,10 @@ def GetTodoTasksNum(name):
 # 获取所有已完成事项的数量
 @app.route("/todo/api/v1.0/<name>/getdonetasksnum")
 def GetDoneTasksNum(name):
+    if Task.query.filter_by(
+        user=name
+    ).count() == 0:
+        abort(403)
     datanum = Task.query.filter(
         Task.user == name,
         Task.done == 1
@@ -342,7 +424,8 @@ def GetDoneTasksNum(name):
         "data": datanum,
     })
 
+
 if __name__ == '__main__':
     # db.drop_all()
     # db.create_all()
-    app.run(debug=True)
+    app.run()
